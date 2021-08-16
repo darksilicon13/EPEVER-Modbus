@@ -10,7 +10,7 @@ import certifi
 
 #  Connect to MongoDB/Cluster0/test/limitTen
 ca = certifi.where()
-client = pymongo.MongoClient("mongodb+srv://lee:mineral9!!@cluster0.kii4s.mongodb.net/test?retryWrites=true&w=majority", tlsCAFile=ca)
+client = pymongo.MongoClient("mongodb+srv://id:password@cluster0.kii4s.mongodb.net/test?retryWrites=true&w=majority", tlsCAFile=ca)
 db = client.test
 collection = db["limitTen"] 
 
