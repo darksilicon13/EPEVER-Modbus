@@ -4,7 +4,7 @@ Python Script for loading data from EPEVER solar charge controllers
 This was heavily inspired by multiple repository
 Go read:
 
-https://github.com/kasbert/epsolar-tracer
+https://github.com/kasbert/epsolar-tracer \n
 https://github.com/plopp/python-modbus-epever-xtra
 and PDF files included in this repository.
 
