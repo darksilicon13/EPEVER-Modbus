@@ -1,24 +1,20 @@
-# This is the main script to read all neccessary registers from EPEVER XTRA and upload the datas to MongoDB
+from epever_registers import *
+import pymongo
 import pprint
 import minimalmodbus
 import serial
-import time
-import datetime
-from epever_registers import *
-import pymongo
-import certifi
+import time          
+import datetime    
 
-#  Connect to MongoDB/Cluster0/test/limitTen
-ca = certifi.where()
-client = pymongo.MongoClient("mongodb+srv://id:password@cluster0.kii4s.mongodb.net/test?retryWrites=true&w=majority", tlsCAFile=ca)
-db = client.test
-collection = db["limitTen"] 
+client = pymongo.MongoClient('localhost', 27017)
+# client = pymongo.MongoClient('mongodb://epever:epever@54.180.99.0', 27017)
+db = client.epever
 
 # RS-485 Modbus Connection Check
 while True:
     try:
         # (1)The ID of the controller is 1 by default and can be modified by PC software(Solar Station Monitor) or remote meter MT50.
-        XTRA3210N = minimalmodbus.Instrument(port='COM1', slaveaddress=1, mode=minimalmodbus.MODE_RTU)
+        XTRA3210N = minimalmodbus.Instrument(port='COM8', slaveaddress=1, mode=minimalmodbus.MODE_RTU)
 
         # (2)The serial communication parameters: 115200bps baudrate, 8 data bits, 1 stop bit and no parity,no handshaking
         XTRA3210N.serial.baudrate = 115200
@@ -43,6 +39,7 @@ while True:
 
 print()
 
+rated = {}
 # print all rated data
 print("***RATED DATA***")
 for data in Rated_Data:
@@ -50,12 +47,16 @@ for data in Rated_Data:
         try:
             if data.address == CHARGING_MODE_:
                 mode = XTRA3210N.read_register(data.address, 0, 4)
+                
                 if mode == 0:
                     print("\"{}\" : {}{}".format(data.name, "Connect|Disconnect", data.unit()[1]))
+                    rated[data.name] = "Connect|Disconnect"
                 elif mode == 1:
                     print("\"{}\" : {}{}".format(data.name, "PWM", data.unit()[1]))
+                    rated[data.name] = "PWM"
                 elif mode == 2:
                     print("\"{}\" : {}{}".format(data.name, "MPPT", data.unit()[1]))
+                    rated[data.name] = "MPPT"
                 break
             else:
                 if data.times == 100:
@@ -63,32 +64,58 @@ for data in Rated_Data:
                         high = XTRA3210N.read_register(data.address[1], 2, 4) * 65536
                         low = XTRA3210N.read_register(data.address[0], 2, 4)
                         print("\"{}\" : {}{}".format(data.name, high + low, data.unit()[1]))
+                        rated[data.name] = str(high+low)+data.unit()[1]
                     else:
                         print("\"{}\" : {}{}".format(data.name, XTRA3210N.read_register(data.address, 2, 4), data.unit()[1]))
+                        rated[data.name] = str(XTRA3210N.read_register(data.address, 2, 4))+data.unit()[1]
                 if data.times == 1:
                     print("\"{}\" : {}{}".format(data.name, XTRA3210N.read_register(data.address, 0, 4), data.unit()[1]))
+                    rated[data.name] = str(XTRA3210N.read_register(data.address, 0, 4))+data.unit()[1]
                 break
         except minimalmodbus.NoResponseError:
             continue
         except KeyboardInterrupt:
                 print("Monitoring halted by Keyboard Input")
                 exit(0)
+db.rated.insert_one(rated)
 
 print()
-
-# Count pre-saved documents in the database
-numOfDocuments = collection.count_documents({})
 
 # Add key and values to the dictionary and upload to MongoDB
 while True: 
 
-    # print the number of documents in the database collection
-    print("\nNumber of Documents: {}\n".format(numOfDocuments))
-    
+    post = {}   # dictionary to save all real-time datas
+    post['time'] = str(datetime.datetime.now())
 
-    post = {}
-    # print(str(datetime.datetime.now()))
-    post["time"] = str(datetime.datetime.now())
+        # Device over temperature status
+    while True:
+        data = Discrete_Value[0] # Device over temperature
+        try:
+            if XTRA3210N.read_bit(data.address, 2):
+                post[data.name] = 'Over Temperature'
+            else:
+                post[data.name] = 'Normal'
+            break
+        except minimalmodbus.NoResponseError:
+            continue
+        except KeyboardInterrupt:
+            print("Monitoring halted by Keyboard Input")
+            exit(0)
+
+    # Get night or day status
+    while True:
+        data = Discrete_Value[1] #Night or Day
+        try:
+            if XTRA3210N.read_bit(data.address, 2):
+                post[data.name] = 'Night'
+            else:
+                post[data.name] = 'Day'
+            break
+        except minimalmodbus.NoResponseError:
+            continue
+        except KeyboardInterrupt:
+            print("Monitoring halted by Keyboard Input")
+            exit(0)
 
     for data in Real_Time_Data:
         while True:
@@ -112,7 +139,7 @@ while True:
             except KeyboardInterrupt:
                 print("Monitoring halted by Keyboard Input")
                 exit(0)
-                
+
 
     for data in Stat_Param:
         while True:
@@ -143,31 +170,27 @@ while True:
     for data in Real_Time_Status:
         while True:
             try:
-                post[data.name] = XTRA3210N.read_register(data.address, 0, 4)
+                post[data.name] = to16BitBin(XTRA3210N.read_register(data.address, 0, 4))
                 break
             except minimalmodbus.NoResponseError:
                 continue
             except KeyboardInterrupt:
                 print("Monitoring halted by Keyboard Input")
                 exit(0)
-
+        
     # Upload data to the database and limit the number of documents
-    collection.insert_one(post)
-    numOfDocuments = collection.count_documents({})
-    count = 0
-    if numOfDocuments >= 10:
-        for i in range(numOfDocuments-10):
-            collection.delete_one({})
-            count += 1
-        print("{} document(s) deleted\n".format(count))
+
+    db.real_time.insert_one(post)
+    
+    numOfDocuments = db.real_time.count_documents({})
+    if numOfDocuments > 50:
+        db.real_time.delete_one({})
 
     try:
+        print("***REAL-TIME DATA/STATUS & STATISTICAL PARAMETERS***")
         pprint.pprint(post, sort_dicts=False)
         post.clear()
-        time.sleep(20)
+        time.sleep(1)
     except KeyboardInterrupt:
         print("Monitoring halted by Keyboard Input")
         exit(0)
-    
-
-        

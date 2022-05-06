@@ -38,17 +38,22 @@ class Register:
         self.size = size
         self.description = description
 
-    def is_coil(self):
-        return self.address < 0x1000
+    # def is_coil(self):
+    #     return self.address < 0x1000
 
-    def is_discrete_input(self):
-        return self.address >= 0x1000 and self.address < 0x3000
+    # def is_discrete_input(self):
+    #     return self.address >= 0x1000 and self.address < 0x3000
 
-    def is_input_register(self):
-        return self.address >= 0x3000 and self.address < 0x9000
+    # def is_input_register(self):
+    #     return self.address >= 0x3000 and self.address < 0x9000
 
-    def is_holding_register(self):
-        return self.address >= 0x9000
+    # def is_holding_register(self):
+    #     return self.address >= 0x9000
+
+def to16BitBin(num):
+    value = bin(num).split('b')[1]
+    zeros = (16-len(value))*'0'
+    return zeros+value
 
 Rated_Data = [
     Register("PV array rated voltage", RTD_PV_VOLTAGE, V, 100, "PV array rated voltage"),
